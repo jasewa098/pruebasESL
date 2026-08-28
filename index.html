@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>ESL NFC → Barcode</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121a2d;
+      --panel2: #182238;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --line: rgba(255,255,255,.09);
+      --accent: #22c55e;
+      --accent2: #16a34a;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 15% -10%, rgba(34,197,94,.14), transparent 34rem),
+        var(--bg);
+      color: var(--text);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button, input { font: inherit; }
+
+    .app {
+      width: min(760px, 100%);
+      margin: 0 auto;
+      padding: max(20px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: clamp(22px, 5vw, 30px);
+      margin: 0;
+      letter-spacing: -.02em;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      border-radius: 999px;
+      padding: 8px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      box-shadow: 0 0 0 3px rgba(148,163,184,.12);
+    }
+    .dot.ready { background: var(--accent); box-shadow: 0 0 0 3px rgba(34,197,94,.14); }
+    .dot.error { background: var(--danger); box-shadow: 0 0 0 3px rgba(239,68,68,.14); }
+    .dot.waiting { background: var(--warn); box-shadow: 0 0 0 3px rgba(245,158,11,.14); }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.018));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 18px 60px rgba(0,0,0,.18);
+    }
+
+    .scan-card {
+      text-align: center;
+      padding: 22px 16px;
+    }
+
+    .nfc-icon {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 12px;
+      display: grid;
+      place-items: center;
+      border-radius: 20px;
+      background: rgba(34,197,94,.12);
+      border: 1px solid rgba(34,197,94,.22);
+      font-size: 34px;
+    }
+
+    .scan-title { font-weight: 750; font-size: 20px; }
+    .scan-text { color: var(--muted); margin: 6px auto 16px; max-width: 520px; font-size: 14px; line-height: 1.45; }
+
+    .btn {
+      appearance: none;
+      border: 0;
+      border-radius: 13px;
+      padding: 13px 16px;
+      cursor: pointer;
+      font-weight: 750;
+      transition: transform .08s ease, opacity .15s ease, background .15s ease;
+      min-height: 48px;
+    }
+    .btn:active { transform: scale(.985); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #06110a; }
+    .btn-primary:hover { background: var(--accent2); color: white; }
+    .btn-secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+    .btn-danger { background: rgba(239,68,68,.1); color: #fecaca; border: 1px solid rgba(239,68,68,.25); }
+
+    .main-action { width: 100%; font-size: 16px; }
+
+    .result-card { display: none; }
+    .result-card.visible { display: block; }
+
+    .label {
+      color: var(--muted);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: .11em;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+
+    .esl-id {
+      font-size: clamp(28px, 8vw, 48px);
+      font-weight: 900;
+      letter-spacing: .02em;
+      overflow-wrap: anywhere;
+      margin: 0 0 14px;
+    }
+
+    .barcode-wrap {
+      background: white;
+      border-radius: 14px;
+      padding: 18px 14px 12px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    #barcode {
+      width: 100%;
+      display: block;
+      min-height: 150px;
+    }
+
+    .barcode-human {
+      color: #111827;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 800;
+      text-align: center;
+      font-size: clamp(16px, 4.3vw, 22px);
+      letter-spacing: .06em;
+      margin-top: 8px;
+      overflow-wrap: anywhere;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 9px;
+    }
+
+    .details {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .details strong { display: block; margin-top: 3px; overflow-wrap: anywhere; }
+    .details span { color: var(--muted); }
+
+    .manual-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 9px;
+    }
+
+    input {
+      width: 100%;
+      min-height: 48px;
+      color: var(--text);
+      background: #0c1425;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 0 13px;
+      outline: none;
+    }
+    input:focus { border-color: rgba(34,197,94,.55); box-shadow: 0 0 0 3px rgba(34,197,94,.08); }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .section-title h2 { margin: 0; font-size: 17px; }
+
+    .history {
+      display: grid;
+      gap: 8px;
+    }
+
+    .history-empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 18px 6px;
+      font-size: 14px;
+    }
+
+    .history-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: rgba(255,255,255,.025);
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      cursor: pointer;
+    }
+    .history-item:active { transform: scale(.995); }
+    .history-value {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+    .history-meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .history-arrow { color: var(--muted); font-size: 20px; }
+
+    .notice {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .toast {
+      position: fixed;
+      z-index: 1000;
+      left: 50%;
+      bottom: max(22px, env(safe-area-inset-bottom));
+      transform: translate(-50%, 22px);
+      background: #f8fafc;
+      color: #0f172a;
+      border-radius: 999px;
+      padding: 10px 15px;
+      font-weight: 750;
+      font-size: 13px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+      box-shadow: 0 12px 45px rgba(0,0,0,.35);
+      max-width: calc(100vw - 32px);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    body.fullscreen-barcode .app > * { display: none !important; }
+    body.fullscreen-barcode .result-card {
+      display: flex !important;
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      background: white;
+      color: #111827;
+      border: 0;
+      border-radius: 0;
+      padding: 18px;
+      flex-direction: column;
+      justify-content: center;
+      margin: 0;
+    }
+    body.fullscreen-barcode .result-card .label,
+    body.fullscreen-barcode .result-card .details { display: none; }
+    body.fullscreen-barcode .result-card .esl-id {
+      color: #111827;
+      text-align: center;
+      margin-bottom: 12px;
+      font-size: clamp(30px, 8vw, 56px);
+    }
+    body.fullscreen-barcode .result-card .barcode-wrap {
+      padding: 20px;
+      margin: 0;
+      width: 100%;
+    }
+    body.fullscreen-barcode .result-card #barcode {
+      min-height: 32vh;
+      max-height: 46vh;
+    }
+    body.fullscreen-barcode .result-card .actions {
+      margin-top: 18px;
+      grid-template-columns: 1fr;
+    }
+    body.fullscreen-barcode .result-card .actions button:not(#fullscreenBtn) { display: none; }
+    body.fullscreen-barcode #fullscreenBtn {
+      background: #111827;
+      color: white;
+    }
+
+    @media (min-width: 620px) {
+      .actions { grid-template-columns: repeat(4, 1fr); }
+      .scan-card { padding: 28px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header>
+      <div>
+        <h1>ESL NFC → Barcode</h1>
+        <p class="subtitle">Lee el NDEF de la etiqueta y genera CODE128.</p>
+      </div>
+      <div class="badge" id="statusBadge">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Sin iniciar</span>
+      </div>
+    </header>
+
+    <section class="card scan-card">
+      <div class="nfc-icon">⌁</div>
+      <div class="scan-title">Acerca una ESL al móvil</div>
+      <p class="scan-text" id="scanHelp">
+        Pulsa una vez para activar el lector NFC. Después podrás ir acercando etiquetas una detrás de otra.
+      </p>
+      <button class="btn btn-primary main-action" id="startBtn">Iniciar lectura NFC</button>
+    </section>
+
+    <section class="card result-card" id="resultCard">
+      <div class="label">ESL ID leído</div>
+      <div class="esl-id" id="eslValue">—</div>
+
+      <div class="barcode-wrap">
+        <svg id="barcode" role="img" aria-label="Código de barras CODE128"></svg>
+        <div class="barcode-human" id="barcodeHuman"></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="copyBtn">Copiar ID</button>
+        <button class="btn btn-secondary" id="fullscreenBtn">Pantalla completa</button>
+        <button class="btn btn-secondary" id="downloadBtn">Guardar SVG</button>
+        <button class="btn btn-secondary" id="clearCurrentBtn">Limpiar</button>
+      </div>
+
+      <div class="details">
+        <div><span>UID NFC</span><strong id="serialValue">—</strong></div>
+        <div><span>Hora</span><strong id="timeValue">—</strong></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <h2>Entrada manual</h2>
+      </div>
+      <div class="manual-row">
+        <input id="manualInput" autocomplete="off" autocapitalize="characters" spellcheck="false"
+               placeholder="Ej. 22-DA-C1-86" />
+        <button class="btn btn-secondary" id="manualBtn">Generar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-title">
+        <h2>Historial</h2>
+        <button class="btn btn-danger" id="clearHistoryBtn" style="min-height:38px;padding:8px 11px;">Borrar</button>
+      </div>
+      <div class="history" id="history"></div>
+    </section>
+
+    <section class="card notice">
+      <strong style="color:var(--text)">Importante:</strong>
+      la lectura NFC del navegador requiere Chrome/Chromium en Android y una página servida desde un contexto seguro
+      (<strong>HTTPS</strong> o <strong>http://localhost</strong>). Abrir este archivo directamente como
+      <code>file://</code> no permite usar Web NFC. La entrada manual y el barcode sí funcionan siempre.
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  // CODE128 patterns (0..106). Each digit is the width in modules of alternating bar/space.
+  const CODE128_PATTERNS = [
+    "212222","222122","222221","121223","121322","131222","122213","122312","132212","221213",
+    "221312","231212","112232","122132","122231","113222","123122","123221","223211","221132",
+    "221231","213212","223112","312131","311222","321122","321221","312212","322112","322211",
+    "212123","212321","232121","111323","131123","131321","112313","132113","132311","211313",
+    "231113","231311","112133","112331","132131","113123","113321","133121","313121","211331",
+    "231131","213113","213311","213131","311123","311321","331121","312113","312311","332111",
+    "314111","221411","431111","111224","111422","121124","121421","141122","141221","112214",
+    "112412","122114","122411","142112","142211","241211","221114","413111","241112","134111",
+    "111242","121142","121241","114212","124112","124211","411212","421112","421211","212141",
+    "214121","412121","111143","111341","131141","114113","114311","411113","411311","113141",
+    "114131","311141","411131","211412","211214","211232","2331112"
+  ];
+
+  const $ = id => document.getElementById(id);
+  const els = {
+    startBtn: $("startBtn"),
+    statusBadge: $("statusBadge"),
+    statusDot: $("statusDot"),
+    statusText: $("statusText"),
+    scanHelp: $("scanHelp"),
+    resultCard: $("resultCard"),
+    eslValue: $("eslValue"),
+    barcode: $("barcode"),
+    barcodeHuman: $("barcodeHuman"),
+    serialValue: $("serialValue"),
+    timeValue: $("timeValue"),
+    copyBtn: $("copyBtn"),
+    fullscreenBtn: $("fullscreenBtn"),
+    downloadBtn: $("downloadBtn"),
+    clearCurrentBtn: $("clearCurrentBtn"),
+    manualInput: $("manualInput"),
+    manualBtn: $("manualBtn"),
+    history: $("history"),
+    clearHistoryBtn: $("clearHistoryBtn"),
+    toast: $("toast")
+  };
+
+  let ndef = null;
+  let currentValue = "";
+  let lastScanKey = "";
+  let lastScanAt = 0;
+
+  function setStatus(text, kind = "") {
+    els.statusText.textContent = text;
+    els.statusDot.className = "dot" + (kind ? " " + kind : "");
+  }
+
+  function toast(message) {
+    els.toast.textContent = message;
+    els.toast.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => els.toast.classList.remove("show"), 1800);
+  }
+
+  function normalizeValue(value) {
+    return String(value ?? "")
+      .replace(/\u0000/g, "")
+      .trim();
+  }
+
+  function code128BValues(text) {
+    if (!text) throw new Error("El valor está vacío.");
+
+    const chars = [...text];
+    for (const ch of chars) {
+      const cp = ch.codePointAt(0);
+      if (cp < 32 || cp > 126) {
+        throw new Error("CODE128-B admite en esta herramienta caracteres ASCII imprimibles (32-126).");
+      }
+    }
+
+    const start = 104; // Start Code B
+    const data = chars.map(ch => ch.charCodeAt(0) - 32);
+
+    let checksum = start;
+    data.forEach((code, i) => checksum += code * (i + 1));
+    checksum %= 103;
+
+    return [start, ...data, checksum, 106];
+  }
+
+  function renderCode128(text) {
+    const values = code128BValues(text);
+    const quiet = 10; // modules each side
+    const barHeight = 82;
+
+    let x = quiet;
+    const rects = [];
+
+    values.forEach(code => {
+      const pattern = CODE128_PATTERNS[code];
+      let isBar = true;
+
+      for (const widthChar of pattern) {
+        const w = Number(widthChar);
+        if (isBar) {
+          rects.push(`<rect x="${x}" y="0" width="${w}" height="${barHeight}"/>`);
+        }
+        x += w;
+        isBar = !isBar;
+      }
+    });
+
+    const totalWidth = x + quiet;
+
+    els.barcode.setAttribute("viewBox", `0 0 ${totalWidth} ${barHeight}`);
+    els.barcode.setAttribute("preserveAspectRatio", "xMidYMid meet");
+    els.barcode.setAttribute("shape-rendering", "crispEdges");
+    els.barcode.innerHTML =
+      `<rect x="0" y="0" width="${totalWidth}" height="${barHeight}" fill="#fff"/>` +
+      `<g fill="#000">${rects.join("")}</g>`;
+
+    els.barcodeHuman.textContent = text;
+  }
+
+  function getHistory() {
+    try {
+      const data = JSON.parse(localStorage.getItem("esl-nfc-history") || "[]");
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveHistory(value, serial, iso) {
+    const history = getHistory();
+    const newest = {
+      value,
+      serial: serial || "",
+      at: iso || new Date().toISOString()
+    };
+
+    // Evita duplicados consecutivos.
+    if (history[0]?.value === value) {
+      history[0] = newest;
+    } else {
+      history.unshift(newest);
+    }
+
+    localStorage.setItem("esl-nfc-history", JSON.stringify(history.slice(0, 50)));
+    renderHistory();
+  }
+
+  function formatTime(iso) {
+    try {
+      return new Intl.DateTimeFormat("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      }).format(new Date(iso));
+    } catch {
+      return "—";
+    }
+  }
+
+  function renderHistory() {
+    const history = getHistory();
+    els.history.innerHTML = "";
+
+    if (!history.length) {
+      els.history.innerHTML = `<div class="history-empty">Todavía no has leído ninguna ESL.</div>`;
+      return;
+    }
+
+    for (const item of history) {
+      const row = document.createElement("div");
+      row.className = "history-item";
+      row.innerHTML = `
+        <div>
+          <div class="history-value"></div>
+          <div class="history-meta"></div>
+        </div>
+        <div class="history-arrow">›</div>`;
+      row.querySelector(".history-value").textContent = item.value;
+      row.querySelector(".history-meta").textContent =
+        `${formatTime(item.at)}${item.serial ? " · UID " + item.serial : ""}`;
+      row.addEventListener("click", () => showResult(item.value, item.serial, item.at, false));
+      els.history.appendChild(row);
+    }
+  }
+
+  function showResult(value, serial = "", iso = new Date().toISOString(), addToHistory = true) {
+    value = normalizeValue(value);
+    if (!value) {
+      toast("No se encontró texto en la etiqueta.");
+      return;
+    }
+
+    try {
+      renderCode128(value);
+    } catch (err) {
+      toast(err.message || "No se pudo generar el barcode.");
+      return;
+    }
+
+    currentValue = value;
+    els.eslValue.textContent = value;
+    els.serialValue.textContent = serial || "—";
+    els.timeValue.textContent = formatTime(iso);
+    els.resultCard.classList.add("visible");
+
+    if (addToHistory) saveHistory(value, serial, iso);
+
+    if (navigator.vibrate) navigator.vibrate(70);
+
+    requestAnimationFrame(() => {
+      els.resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function decodeTextRecord(record) {
+    try {
+      const encoding = record.encoding || "utf-8";
+      return new TextDecoder(encoding).decode(record.data);
+    } catch {
+      try {
+        return new TextDecoder("utf-8").decode(record.data);
+      } catch {
+        return "";
+      }
+    }
+  }
+
+  function extractTextFromMessage(message) {
+    // Prioridad 1: NDEF Text records, justo el formato mostrado por NFC Tools.
+    for (const record of message.records || []) {
+      if (record.recordType === "text") {
+        const value = normalizeValue(decodeTextRecord(record));
+        if (value) return value;
+      }
+    }
+
+    // Fallback: intenta decodificar registros con bytes como UTF-8.
+    for (const record of message.records || []) {
+      if (record.data) {
+        try {
+          const value = normalizeValue(new TextDecoder("utf-8").decode(record.data));
+          if (value) return value;
+        } catch {}
+      }
+    }
+
+    return "";
+  }
+
+  async function startNfc() {
+    if (!("NDEFReader" in window)) {
+      setStatus("No compatible", "error");
+      els.scanHelp.innerHTML =
+        "Este navegador no expone Web NFC. Prueba con <strong>Chrome en Android</strong> y abre la página mediante <strong>HTTPS</strong> o <strong>localhost</strong>.";
+      toast("Web NFC no está disponible aquí.");
+      return;
+    }
+
+    try {
+      els.startBtn.disabled = true;
+      setStatus("Solicitando permiso…", "waiting");
+
+      ndef = new NDEFReader();
+      await ndef.scan();
+
+      setStatus("Esperando ESL", "ready");
+      els.startBtn.textContent = "NFC activo · acerca una ESL";
+      els.scanHelp.textContent = "Lector activo. Acerca una ESL; el barcode se actualizará automáticamente.";
+
+      ndef.addEventListener("readingerror", () => {
+        setStatus("Error de lectura", "error");
+        toast("No se pudo leer la etiqueta. Vuelve a acercarla.");
+      });
+
+      ndef.addEventListener("reading", event => {
+        const value = extractTextFromMessage(event.message);
+        const serial = event.serialNumber || "";
+        const now = Date.now();
+        const key = `${serial}|${value}`;
+
+        // Algunos móviles disparan varios eventos al mantener la etiqueta pegada.
+        if (key === lastScanKey && now - lastScanAt < 1500) return;
+        lastScanKey = key;
+        lastScanAt = now;
+
+        if (!value) {
+          toast("NFC leído, pero no encontré un registro de texto.");
+          return;
+        }
+
+        setStatus("ESL leída", "ready");
+        showResult(value, serial, new Date().toISOString(), true);
+
+        setTimeout(() => {
+          if (ndef) setStatus("Esperando ESL", "ready");
+        }, 900);
+      });
+
+    } catch (err) {
+      els.startBtn.disabled = false;
+      setStatus("No iniciado", "error");
+
+      const name = err?.name || "";
+      if (name === "NotAllowedError") {
+        toast("Permiso NFC rechazado.");
+      } else if (name === "NotSupportedError") {
+        toast("Web NFC no es compatible con este dispositivo/navegador.");
+      } else if (name === "InvalidStateError") {
+        toast("Activa el NFC del teléfono e inténtalo otra vez.");
+      } else {
+        toast("No se pudo iniciar NFC: " + (err?.message || name || "error"));
+      }
+    }
+  }
+
+  async function copyCurrent() {
+    if (!currentValue) return;
+    try {
+      await navigator.clipboard.writeText(currentValue);
+      toast("ESL ID copiado.");
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = currentValue;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      toast("ESL ID copiado.");
+    }
+  }
+
+  function toggleFullscreenBarcode() {
+    const active = document.body.classList.toggle("fullscreen-barcode");
+    els.fullscreenBtn.textContent = active ? "Salir de pantalla completa" : "Pantalla completa";
+
+    if (active && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else if (!active && document.fullscreenElement && document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+
+  function saveSvg() {
+    if (!currentValue) return;
+
+    const clone = els.barcode.cloneNode(true);
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    const viewBox = clone.getAttribute("viewBox") || "0 0 300 82";
+    const blob = new Blob([clone.outerHTML], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `barcode-${currentValue.replace(/[^a-z0-9_-]+/gi, "_")}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Barcode guardado como SVG.");
+  }
+
+  function clearCurrent() {
+    currentValue = "";
+    els.resultCard.classList.remove("visible");
+    els.eslValue.textContent = "—";
+    els.serialValue.textContent = "—";
+    els.timeValue.textContent = "—";
+    els.barcode.innerHTML = "";
+    els.barcodeHuman.textContent = "";
+    document.body.classList.remove("fullscreen-barcode");
+    els.fullscreenBtn.textContent = "Pantalla completa";
+  }
+
+  function generateManual() {
+    const value = normalizeValue(els.manualInput.value).toUpperCase();
+    if (!value) {
+      toast("Escribe un ESL ID.");
+      return;
+    }
+    showResult(value, "", new Date().toISOString(), true);
+  }
+
+  els.startBtn.addEventListener("click", startNfc);
+  els.copyBtn.addEventListener("click", copyCurrent);
+  els.fullscreenBtn.addEventListener("click", toggleFullscreenBarcode);
+  els.downloadBtn.addEventListener("click", saveSvg);
+  els.clearCurrentBtn.addEventListener("click", clearCurrent);
+  els.manualBtn.addEventListener("click", generateManual);
+  els.manualInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") generateManual();
+  });
+
+  els.clearHistoryBtn.addEventListener("click", () => {
+    if (!getHistory().length) return;
+    if (confirm("¿Borrar todo el historial de ESL?")) {
+      localStorage.removeItem("esl-nfc-history");
+      renderHistory();
+      toast("Historial borrado.");
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    if (!document.fullscreenElement && document.body.classList.contains("fullscreen-barcode")) {
+      document.body.classList.remove("fullscreen-barcode");
+      els.fullscreenBtn.textContent = "Pantalla completa";
+    }
+  });
+
+  // Estado inicial / diagnóstico del contexto.
+  if (!window.isSecureContext) {
+    setStatus("Necesita HTTPS", "error");
+  } else if ("NDEFReader" in window) {
+    setStatus("Compatible", "ready");
+  } else {
+    setStatus("Web NFC no disponible", "error");
+  }
+
+  renderHistory();
+})();
+</script>
+</body>
+</html>
